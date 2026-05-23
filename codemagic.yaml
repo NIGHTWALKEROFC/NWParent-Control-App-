@@ -23,6 +23,16 @@ workflows:
         script: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
 
+      - name: Generate gradlew
+        script: |
+          cd $CM_BUILD_DIR
+          gradle wrapper
+
+      - name: Make gradlew executable
+        script: |
+          cd $CM_BUILD_DIR
+          chmod +x gradlew
+
       - name: Build Debug APK
         script: |
           cd $CM_BUILD_DIR
