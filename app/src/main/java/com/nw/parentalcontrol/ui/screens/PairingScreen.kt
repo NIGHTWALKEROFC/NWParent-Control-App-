@@ -1,4 +1,4 @@
-// PATH: nw-parent-app/app/src/main/java/com/nw/parentalcontrol/ui/screens/PairingScreen.kt
+// PATH: app/src/main/java/com/nw/parentalcontrol/ui/screens/PairingScreen.kt
 package com.nw.parentalcontrol.ui.screens
 
 import androidx.compose.animation.*
@@ -95,12 +95,12 @@ fun PairingScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .scale(if (uiState.pairingCode.isNotEmpty()) scale else 1f),
-                shape  = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = ParentCard),
+                shape     = RoundedCornerShape(24.dp),
+                colors    = CardDefaults.cardColors(containerColor = ParentCard),
                 elevation = CardDefaults.cardElevation(10.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(32.dp),
+                    modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -117,22 +117,33 @@ fun PairingScreen(
                             CircularProgressIndicator(color = ParentAccent, modifier = Modifier.size(52.dp))
                         }
                         uiState.pairingCode.isNotEmpty() -> {
-                            // Six digit boxes
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Six digit boxes — all fit inside card width
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                // Use weight to distribute evenly
                                 uiState.pairingCode.forEachIndexed { i, ch ->
-                                    if (i == 3) Spacer(Modifier.width(8.dp))
+                                    if (i == 3) {
+                                        Spacer(Modifier.width(6.dp))
+                                    }
                                     Box(
                                         modifier = Modifier
-                                            .size(44.dp, 58.dp)
+                                            .weight(1f)
+                                            .height(52.dp)
                                             .clip(RoundedCornerShape(10.dp))
                                             .background(ParentSurface)
                                             .border(1.dp, ParentAccent.copy(0.4f), RoundedCornerShape(10.dp)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(ch.toString(), fontSize = 28.sp,
+                                        Text(
+                                            ch.toString(),
+                                            fontSize = 24.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             fontFamily = FontFamily.Monospace,
-                                            color = ParentOnBackground)
+                                            color = ParentOnBackground
+                                        )
                                     }
                                 }
                             }
@@ -162,9 +173,11 @@ fun PairingScreen(
                             )
                         }
                         else -> {
-                            Text("Tap below to generate a\npairing code for the child device",
+                            Text(
+                                "Tap below to generate a\npairing code for the child device",
                                 fontSize = 14.sp, color = ParentOnSurface,
-                                textAlign = TextAlign.Center, lineHeight = 22.sp)
+                                textAlign = TextAlign.Center, lineHeight = 22.sp
+                            )
                         }
                     }
                 }
@@ -176,8 +189,8 @@ fun PairingScreen(
             Button(
                 onClick = { viewModel.generatePairingCode() },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape  = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ParentAccent)
+                shape    = RoundedCornerShape(16.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = ParentAccent)
             ) {
                 Icon(
                     if (uiState.pairingCode.isEmpty()) Icons.Default.QrCode else Icons.Default.Refresh,
