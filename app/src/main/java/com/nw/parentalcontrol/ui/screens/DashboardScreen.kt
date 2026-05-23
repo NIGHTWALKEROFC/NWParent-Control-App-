@@ -410,7 +410,7 @@ private fun PermRow(label: String, icon: ImageVector, granted: Boolean, isLast: 
                 color = if (granted) ParentSuccess else ParentError)
         }
     }
-    if (!isLast) HorizontalDivider(color = ParentSurface, thickness = 1.dp)
+    if (!isLast) Divider(color = ParentSurface, thickness = 1.dp)
 }
 
 @Composable
