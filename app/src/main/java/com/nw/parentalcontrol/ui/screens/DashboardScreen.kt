@@ -1,4 +1,4 @@
-// PATH: nw-parent-app/app/src/main/java/com/nw/parentalcontrol/ui/screens/DashboardScreen.kt
+// PATH: app/src/main/java/com/nw/parentalcontrol/ui/screens/DashboardScreen.kt
 package com.nw.parentalcontrol.ui.screens
 
 import androidx.compose.animation.*
@@ -21,7 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.nw.parentalcontrol.data.ChildPermissions
+import com.google.firebase.database.*
 import com.nw.parentalcontrol.ui.theme.*
 import com.nw.parentalcontrol.viewmodel.ParentViewModel
 import kotlinx.coroutines.delay
@@ -36,18 +36,37 @@ fun DashboardScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showForceDisconnectDialog by remember { mutableStateOf(false) }
     var showAppControlDialog      by remember { mutableStateOf(false) }
+    var showNotificationsDialog   by remember { mutableStateOf(false) }
+    var showContactsDialog        by remember { mutableStateOf(false) }
+    var notifications             by remember { mutableStateOf<List<Map<String,Any>>>(emptyList()) }
+    var contacts                  by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    // Go back to pairing screen when device is cleared
     LaunchedEffect(uiState.connectedDevice) {
         if (uiState.connectedDevice == null && !uiState.isLoading) onDisconnected()
     }
-
-    // Auto-clear success toast
     LaunchedEffect(uiState.successMessage) {
         if (uiState.successMessage != null) { delay(2500); viewModel.clearSuccess() }
     }
 
-    // ── Update dialog ────────────────────────────────────────────────
+    // Load notifications from Firebase when dialog opens
+    LaunchedEffect(showNotificationsDialog) {
+        if (showNotificationsDialog) {
+            val deviceId = uiState.connectedDevice?.deviceId ?: return@LaunchedEffect
+            FirebaseDatabase.getInstance().getReference("notifications").child(deviceId)
+                .orderByKey().limitToLast(50)
+                .get().addOnSuccessListener { snap ->
+                    val list = mutableListOf<Map<String, Any>>()
+                    snap.children.forEach { child ->
+                        @Suppress("UNCHECKED_CAST")
+                        val item = child.value as? Map<String, Any>
+                        if (item != null) list.add(0, item)
+                    }
+                    notifications = list
+                }
+        }
+    }
+
+    // Update dialog
     uiState.updateInfo?.let { upd ->
         AlertDialog(
             onDismissRequest = { if (!upd.mandatory) viewModel.dismissUpdate() },
@@ -71,7 +90,7 @@ fun DashboardScreen(
         )
     }
 
-    // ── Disconnect request dialog ────────────────────────────────────
+    // Disconnect request
     if (uiState.pendingDisconnectRequest) {
         AlertDialog(
             onDismissRequest = {},
@@ -92,7 +111,7 @@ fun DashboardScreen(
         )
     }
 
-    // ── Delete request dialog ────────────────────────────────────────
+    // Delete request
     if (uiState.pendingDeleteRequest) {
         AlertDialog(
             onDismissRequest = {},
@@ -126,7 +145,7 @@ fun DashboardScreen(
         ) {
             Spacer(Modifier.height(52.dp))
 
-            // ── Header ───────────────────────────────────────────────
+            // Header
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(46.dp).clip(CircleShape)
@@ -143,43 +162,36 @@ fun DashboardScreen(
 
             Spacer(Modifier.height(22.dp))
 
-            // ── Connected Device Card ────────────────────────────────
             uiState.connectedDevice?.let { dev ->
+
+                // Device card
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape    = RoundedCornerShape(20.dp),
-                    colors   = CardDefaults.cardColors(containerColor = ParentCard),
+                    modifier  = Modifier.fillMaxWidth(),
+                    shape     = RoundedCornerShape(20.dp),
+                    colors    = CardDefaults.cardColors(containerColor = ParentCard),
                     elevation = CardDefaults.cardElevation(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(18.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier.size(54.dp).clip(CircleShape)
                                 .background(ParentSuccess.copy(0.15f))
                                 .border(2.dp, ParentSuccess, CircleShape),
                             contentAlignment = Alignment.Center
                         ) { Icon(Icons.Default.PhoneAndroid, null, tint = ParentSuccess, modifier = Modifier.size(28.dp)) }
-
                         Spacer(Modifier.width(14.dp))
-
                         Column(Modifier.weight(1f)) {
                             Text(dev.deviceName.ifEmpty { "Child Device" },
                                 fontSize = 16.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
-                            Text("Connected ${formatDate(dev.connectedAt)}",
-                                fontSize = 11.sp, color = ParentOnSurface)
+                            Text("Connected ${formatDate(dev.connectedAt)}", fontSize = 11.sp, color = ParentOnSurface)
                             Spacer(Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(8.dp).clip(CircleShape)
                                     .background(if (dev.isOnline) ParentSuccess else ParentError))
                                 Spacer(Modifier.width(5.dp))
-                                Text(if (dev.isOnline) "Online" else "Offline",
-                                    fontSize = 12.sp,
+                                Text(if (dev.isOnline) "Online" else "Offline", fontSize = 12.sp,
                                     color = if (dev.isOnline) ParentSuccess else ParentError)
                             }
                         }
-
                         IconButton(onClick = { showForceDisconnectDialog = true }) {
                             Icon(Icons.Default.LinkOff, null, tint = ParentError)
                         }
@@ -188,7 +200,7 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Permissions Status ───────────────────────────────
+                // Permissions
                 SectionLabel("Device Permissions")
                 Spacer(Modifier.height(10.dp))
                 Card(
@@ -198,20 +210,20 @@ fun DashboardScreen(
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         val p = dev.permissions
-                        PermRow("Live Camera",        Icons.Default.Videocam,     p.camera)
-                        PermRow("Live Voice",         Icons.Default.Mic,          p.microphone)
-                        PermRow("Screen Share",       Icons.Default.ScreenShare,  p.screenShare)
-                        PermRow("Storage Access",     Icons.Default.Folder,       p.storage)
-                        PermRow("Notification Access",Icons.Default.Notifications,p.notifications)
-                        PermRow("Contact Access",     Icons.Default.Contacts,     p.contacts)
-                        PermRow("Accessibility",      Icons.Default.Accessibility,p.accessibility)
-                        PermRow("App Usage Stats",    Icons.Default.BarChart,     p.usageStats, isLast = true)
+                        PermRow("Live Camera",         Icons.Default.Videocam,      p.camera)
+                        PermRow("Live Voice",          Icons.Default.Mic,           p.microphone)
+                        PermRow("Screen Share",        Icons.Default.ScreenShare,   p.screenShare)
+                        PermRow("Storage Access",      Icons.Default.Folder,        p.storage)
+                        PermRow("Notification Access", Icons.Default.Notifications, p.notifications)
+                        PermRow("Contact Access",      Icons.Default.Contacts,      p.contacts)
+                        PermRow("Accessibility",       Icons.Default.Accessibility, p.accessibility)
+                        PermRow("App Usage Stats",     Icons.Default.BarChart,      p.usageStats, isLast = true)
                     }
                 }
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Live Controls ────────────────────────────────────
+                // Live Controls
                 SectionLabel("Live Controls")
                 Spacer(Modifier.height(10.dp))
 
@@ -232,7 +244,7 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(12.dp))
 
-                // Screen Share full-width toggle
+                // Screen share
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape    = RoundedCornerShape(16.dp),
@@ -242,12 +254,10 @@ fun DashboardScreen(
                     border = if (uiState.screenShareEnabled) BorderStroke(1.dp, ParentSuccess) else null
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                             .clickable(enabled = dev.permissions.screenShare) {
                                 viewModel.enableScreenShare(!uiState.screenShareEnabled)
-                            }
-                            .padding(16.dp),
+                            }.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(Icons.Default.ScreenShare, null,
@@ -266,12 +276,12 @@ fun DashboardScreen(
                             )
                         }
                         Switch(
-                            checked  = uiState.screenShareEnabled,
+                            checked         = uiState.screenShareEnabled,
                             onCheckedChange = { viewModel.enableScreenShare(it) },
-                            enabled  = dev.permissions.screenShare,
-                            colors   = SwitchDefaults.colors(
-                                checkedThumbColor  = Color.White,
-                                checkedTrackColor  = ParentSuccess
+                            enabled         = dev.permissions.screenShare,
+                            colors          = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = ParentSuccess
                             )
                         )
                     }
@@ -279,7 +289,30 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── App Controls ─────────────────────────────────────
+                // Data Access section
+                SectionLabel("Data Access")
+                Spacer(Modifier.height(10.dp))
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DataAccessCard(
+                        modifier  = Modifier.weight(1f),
+                        title     = "Notifications",
+                        icon      = Icons.Default.Notifications,
+                        available = dev.permissions.notifications,
+                        onClick   = { showNotificationsDialog = true }
+                    )
+                    DataAccessCard(
+                        modifier  = Modifier.weight(1f),
+                        title     = "Contacts",
+                        icon      = Icons.Default.Contacts,
+                        available = dev.permissions.contacts,
+                        onClick   = { showContactsDialog = true }
+                    )
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // App Controls
                 SectionLabel("App Controls")
                 Spacer(Modifier.height(10.dp))
 
@@ -297,7 +330,7 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Force Disconnect ─────────────────────────────────
+                // Disconnect
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape    = RoundedCornerShape(16.dp),
@@ -307,7 +340,7 @@ fun DashboardScreen(
                     Column(Modifier.padding(16.dp)) {
                         Text("Disconnect Device", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ParentError)
                         Spacer(Modifier.height(4.dp))
-                        Text("Immediately removes the child device. The child will need to re-pair.",
+                        Text("Immediately removes the child device. Child will need to re-pair.",
                             fontSize = 12.sp, color = ParentOnSurface)
                         Spacer(Modifier.height(12.dp))
                         OutlinedButton(
@@ -327,7 +360,7 @@ fun DashboardScreen(
             Spacer(Modifier.height(32.dp))
         }
 
-        // ── Force disconnect confirm ──────────────────────────────────
+        // Force disconnect dialog
         if (showForceDisconnectDialog) {
             AlertDialog(
                 onDismissRequest = { showForceDisconnectDialog = false },
@@ -349,17 +382,111 @@ fun DashboardScreen(
             )
         }
 
-        // ── App control dialog ────────────────────────────────────────
+        // App control dialog
         if (showAppControlDialog) {
             AppControlDialog(
-                onDismiss   = { showAppControlDialog = false },
-                onSetLimit  = { pkg, mins -> viewModel.setAppLimit(pkg, mins) },
-                onBlock     = { pkg -> viewModel.blockApp(pkg) },
-                onUnblock   = { pkg -> viewModel.unblockApp(pkg) }
+                onDismiss  = { showAppControlDialog = false },
+                onSetLimit = { pkg, mins -> viewModel.setAppLimit(pkg, mins) },
+                onBlock    = { pkg -> viewModel.blockApp(pkg) },
+                onUnblock  = { pkg -> viewModel.unblockApp(pkg) }
             )
         }
 
-        // ── Success toast ─────────────────────────────────────────────
+        // Notifications viewer dialog
+        if (showNotificationsDialog) {
+            Dialog(onDismissRequest = { showNotificationsDialog = false }) {
+                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("Recent Notifications", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
+                        Spacer(Modifier.height(12.dp))
+                        if (notifications.isEmpty()) {
+                            Text("No notifications captured yet.", color = ParentOnSurface, fontSize = 13.sp)
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .heightIn(max = 400.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                notifications.forEach { notif ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        shape    = RoundedCornerShape(10.dp),
+                                        colors   = CardDefaults.cardColors(containerColor = ParentSurface)
+                                    ) {
+                                        Column(Modifier.padding(10.dp)) {
+                                            Text(
+                                                notif["packageName"]?.toString() ?: "",
+                                                fontSize = 11.sp, color = ParentAccent, fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                notif["title"]?.toString() ?: "",
+                                                fontSize = 13.sp, color = ParentOnBackground
+                                            )
+                                            Text(
+                                                formatDate((notif["timestamp"] as? Long) ?: 0L),
+                                                fontSize = 10.sp, color = ParentOnSurface
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        TextButton(onClick = { showNotificationsDialog = false }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Close", color = ParentOnSurface)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Contacts viewer dialog
+        if (showContactsDialog) {
+            val deviceId = uiState.connectedDevice?.deviceId
+            LaunchedEffect(showContactsDialog) {
+                if (showContactsDialog && deviceId != null) {
+                    FirebaseDatabase.getInstance().getReference("contacts").child(deviceId)
+                        .get().addOnSuccessListener { snap ->
+                            val list = mutableListOf<String>()
+                            snap.children.forEach { child ->
+                                val name   = child.child("name").getValue(String::class.java) ?: ""
+                                val number = child.child("number").getValue(String::class.java) ?: ""
+                                if (name.isNotEmpty()) list.add("$name — $number")
+                            }
+                            contacts = list
+                        }
+                }
+            }
+            Dialog(onDismissRequest = { showContactsDialog = false }) {
+                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("Contacts", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
+                        Spacer(Modifier.height(12.dp))
+                        if (contacts.isEmpty()) {
+                            Text("No contacts synced yet.", color = ParentOnSurface, fontSize = 13.sp)
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .heightIn(max = 400.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                contacts.forEach { contact ->
+                                    Text(contact, fontSize = 13.sp, color = ParentOnBackground,
+                                        modifier = Modifier.padding(vertical = 4.dp))
+                                    Divider(color = ParentSurface)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        TextButton(onClick = { showContactsDialog = false }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Close", color = ParentOnSurface)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Success toast
         AnimatedVisibility(
             visible  = uiState.successMessage != null,
             enter    = slideInVertically { it } + fadeIn(),
@@ -384,16 +511,12 @@ fun DashboardScreen(
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(text, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-        color = ParentAccent, letterSpacing = 1.sp)
+    Text(text, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ParentAccent, letterSpacing = 1.sp)
 }
 
 @Composable
 private fun PermRow(label: String, icon: ImageVector, granted: Boolean, isLast: Boolean = false) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null,
             tint = if (granted) ParentSuccess else ParentOnSurface,
             modifier = Modifier.size(20.dp))
@@ -430,10 +553,7 @@ private fun ControlToggleCard(
         ),
         border = if (enabled) BorderStroke(1.dp, ParentSuccess) else null
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, null,
                 tint = if (!available) ParentOnSurface else if (enabled) ParentSuccess else ParentAccent,
                 modifier = Modifier.size(34.dp))
@@ -449,14 +569,46 @@ private fun ControlToggleCard(
 }
 
 @Composable
+private fun DataAccessCard(
+    modifier: Modifier,
+    title: String,
+    icon: ImageVector,
+    available: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = modifier.clickable(enabled = available, onClick = onClick),
+        shape    = RoundedCornerShape(16.dp),
+        colors   = CardDefaults.cardColors(containerColor = ParentCard),
+        border   = BorderStroke(1.dp, if (available) ParentAccent.copy(0.4f) else ParentOnSurface.copy(0.2f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(icon, null,
+                tint = if (available) ParentAccent else ParentOnSurface,
+                modifier = Modifier.size(30.dp))
+            Spacer(Modifier.height(8.dp))
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
+            Text(
+                if (available) "Tap to view" else "Unavailable",
+                fontSize = 11.sp,
+                color = if (available) ParentAccent else ParentOnSurface
+            )
+        }
+    }
+}
+
+@Composable
 private fun AppControlDialog(
     onDismiss:  () -> Unit,
     onSetLimit: (String, Int) -> Unit,
     onBlock:    (String) -> Unit,
     onUnblock:  (String) -> Unit
 ) {
-    var pkg         by remember { mutableStateOf("") }
-    var limitMins   by remember { mutableStateOf("60") }
+    var pkg       by remember { mutableStateOf("") }
+    var limitMins by remember { mutableStateOf("60") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
@@ -464,9 +616,7 @@ private fun AppControlDialog(
                 Text("App Controls", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
                 Text("Enter the app's package name (e.g. com.whatsapp)",
                     fontSize = 12.sp, color = ParentOnSurface, modifier = Modifier.padding(top = 4.dp))
-
                 Spacer(Modifier.height(16.dp))
-
                 OutlinedTextField(
                     value         = pkg,
                     onValueChange = { pkg = it },
@@ -474,15 +624,13 @@ private fun AppControlDialog(
                     modifier      = Modifier.fillMaxWidth(),
                     singleLine    = true,
                     colors        = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor   = ParentOnBackground,
-                        unfocusedTextColor = ParentOnBackground,
-                        focusedBorderColor = ParentAccent,
+                        focusedTextColor     = ParentOnBackground,
+                        unfocusedTextColor   = ParentOnBackground,
+                        focusedBorderColor   = ParentAccent,
                         unfocusedBorderColor = ParentOnSurface
                     )
                 )
-
                 Spacer(Modifier.height(12.dp))
-
                 OutlinedTextField(
                     value         = limitMins,
                     onValueChange = { limitMins = it },
@@ -490,31 +638,26 @@ private fun AppControlDialog(
                     modifier      = Modifier.fillMaxWidth(),
                     singleLine    = true,
                     colors        = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor   = ParentOnBackground,
-                        unfocusedTextColor = ParentOnBackground,
-                        focusedBorderColor = ParentAccent,
+                        focusedTextColor     = ParentOnBackground,
+                        unfocusedTextColor   = ParentOnBackground,
+                        focusedBorderColor   = ParentAccent,
                         unfocusedBorderColor = ParentOnSurface
                     )
                 )
-
                 Spacer(Modifier.height(20.dp))
-
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick  = { if (pkg.isNotEmpty()) { onUnblock(pkg); onDismiss() } },
                         modifier = Modifier.weight(1f),
                         border   = BorderStroke(1.dp, ParentSuccess)
                     ) { Text("Unblock", color = ParentSuccess, fontSize = 12.sp) }
-
                     OutlinedButton(
                         onClick  = { if (pkg.isNotEmpty()) { onBlock(pkg); onDismiss() } },
                         modifier = Modifier.weight(1f),
                         border   = BorderStroke(1.dp, ParentError)
                     ) { Text("Block App", color = ParentError, fontSize = 12.sp) }
                 }
-
                 Spacer(Modifier.height(8.dp))
-
                 Button(
                     onClick  = {
                         if (pkg.isNotEmpty()) {
@@ -526,9 +669,7 @@ private fun AppControlDialog(
                     shape    = RoundedCornerShape(10.dp),
                     colors   = ButtonDefaults.buttonColors(containerColor = ParentAccent)
                 ) { Text("Set Daily Limit", fontWeight = FontWeight.Bold) }
-
                 Spacer(Modifier.height(6.dp))
-
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                     Text("Cancel", color = ParentOnSurface)
                 }
