@@ -34,12 +34,16 @@ fun DashboardScreen(
     onDisconnected: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
     var showForceDisconnectDialog by remember { mutableStateOf(false) }
     var showAppControlDialog      by remember { mutableStateOf(false) }
     var showNotificationsDialog   by remember { mutableStateOf(false) }
     var showContactsDialog        by remember { mutableStateOf(false) }
-    var notifications             by remember { mutableStateOf<List<Map<String,Any>>>(emptyList()) }
-    var contacts                  by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showCameraView            by remember { mutableStateOf(false) }
+    var showScreenView            by remember { mutableStateOf(false) }
+
+    var notifications by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+    var contacts      by remember { mutableStateOf<List<String>>(emptyList()) }
 
     LaunchedEffect(uiState.connectedDevice) {
         if (uiState.connectedDevice == null && !uiState.isLoading) onDisconnected()
@@ -48,7 +52,7 @@ fun DashboardScreen(
         if (uiState.successMessage != null) { delay(2500); viewModel.clearSuccess() }
     }
 
-    // Load notifications from Firebase when dialog opens
+    // Load notifications
     LaunchedEffect(showNotificationsDialog) {
         if (showNotificationsDialog) {
             val deviceId = uiState.connectedDevice?.deviceId ?: return@LaunchedEffect
@@ -58,15 +62,31 @@ fun DashboardScreen(
                     val list = mutableListOf<Map<String, Any>>()
                     snap.children.forEach { child ->
                         @Suppress("UNCHECKED_CAST")
-                        val item = child.value as? Map<String, Any>
-                        if (item != null) list.add(0, item)
+                        (child.value as? Map<String, Any>)?.let { list.add(0, it) }
                     }
                     notifications = list
                 }
         }
     }
 
-    // Update dialog
+    // Load contacts
+    LaunchedEffect(showContactsDialog) {
+        if (showContactsDialog) {
+            val deviceId = uiState.connectedDevice?.deviceId ?: return@LaunchedEffect
+            FirebaseDatabase.getInstance().getReference("contacts").child(deviceId)
+                .get().addOnSuccessListener { snap ->
+                    val list = mutableListOf<String>()
+                    snap.children.forEach { child ->
+                        val name   = child.child("name").getValue(String::class.java) ?: ""
+                        val number = child.child("number").getValue(String::class.java) ?: ""
+                        if (name.isNotEmpty()) list.add("$name — $number")
+                    }
+                    contacts = list
+                }
+        }
+    }
+
+    // ── Update dialog ────────────────────────────────────────────────
     uiState.updateInfo?.let { upd ->
         AlertDialog(
             onDismissRequest = { if (!upd.mandatory) viewModel.dismissUpdate() },
@@ -90,7 +110,7 @@ fun DashboardScreen(
         )
     }
 
-    // Disconnect request
+    // ── Disconnect request ───────────────────────────────────────────
     if (uiState.pendingDisconnectRequest) {
         AlertDialog(
             onDismissRequest = {},
@@ -111,7 +131,7 @@ fun DashboardScreen(
         )
     }
 
-    // Delete request
+    // ── Delete request ───────────────────────────────────────────────
     if (uiState.pendingDeleteRequest) {
         AlertDialog(
             onDismissRequest = {},
@@ -130,6 +150,26 @@ fun DashboardScreen(
                 ) { Text("Deny", color = ParentSuccess) }
             }
         )
+    }
+
+    // ── Live view dialogs ────────────────────────────────────────────
+    if (showCameraView) {
+        uiState.connectedDevice?.let { dev ->
+            LiveViewDialog(
+                deviceId  = dev.deviceId,
+                type      = LiveViewType.CAMERA,
+                onDismiss = { showCameraView = false }
+            )
+        }
+    }
+    if (showScreenView) {
+        uiState.connectedDevice?.let { dev ->
+            LiveViewDialog(
+                deviceId  = dev.deviceId,
+                type      = LiveViewType.SCREEN,
+                onDismiss = { showScreenView = false }
+            )
+        }
     }
 
     Box(
@@ -164,14 +204,14 @@ fun DashboardScreen(
 
             uiState.connectedDevice?.let { dev ->
 
-                // Device card
+                // ── Device Card ──────────────────────────────────────
                 Card(
                     modifier  = Modifier.fillMaxWidth(),
                     shape     = RoundedCornerShape(20.dp),
                     colors    = CardDefaults.cardColors(containerColor = ParentCard),
                     elevation = CardDefaults.cardElevation(6.dp)
                 ) {
-                    Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier.size(54.dp).clip(CircleShape)
                                 .background(ParentSuccess.copy(0.15f))
@@ -188,8 +228,11 @@ fun DashboardScreen(
                                 Box(Modifier.size(8.dp).clip(CircleShape)
                                     .background(if (dev.isOnline) ParentSuccess else ParentError))
                                 Spacer(Modifier.width(5.dp))
-                                Text(if (dev.isOnline) "Online" else "Offline", fontSize = 12.sp,
-                                    color = if (dev.isOnline) ParentSuccess else ParentError)
+                                Text(
+                                    if (dev.isOnline) "Online" else "Offline",
+                                    fontSize = 12.sp,
+                                    color = if (dev.isOnline) ParentSuccess else ParentError
+                                )
                             }
                         }
                         IconButton(onClick = { showForceDisconnectDialog = true }) {
@@ -200,7 +243,7 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // Permissions
+                // ── Permissions ──────────────────────────────────────
                 SectionLabel("Device Permissions")
                 Spacer(Modifier.height(10.dp))
                 Card(
@@ -223,76 +266,50 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // Live Controls
+                // ── Live Controls ────────────────────────────────────
                 SectionLabel("Live Controls")
                 Spacer(Modifier.height(10.dp))
 
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ControlToggleCard(
-                        Modifier.weight(1f), "Camera", Icons.Default.Videocam,
-                        enabled   = uiState.cameraEnabled,
-                        available = dev.permissions.camera,
-                        onToggle  = { viewModel.enableCamera(!uiState.cameraEnabled) }
-                    )
-                    ControlToggleCard(
-                        Modifier.weight(1f), "Microphone", Icons.Default.Mic,
-                        enabled   = uiState.micEnabled,
-                        available = dev.permissions.microphone,
-                        onToggle  = { viewModel.enableMic(!uiState.micEnabled) }
-                    )
-                }
+                // Camera row
+                LiveControlRow(
+                    title     = "Live Camera",
+                    icon      = Icons.Default.Videocam,
+                    enabled   = uiState.cameraEnabled,
+                    available = dev.permissions.camera,
+                    onToggle  = { viewModel.enableCamera(!uiState.cameraEnabled) },
+                    onView    = { showCameraView = true },
+                    showView  = uiState.cameraEnabled
+                )
+                Spacer(Modifier.height(10.dp))
 
-                Spacer(Modifier.height(12.dp))
+                // Mic row
+                LiveControlRow(
+                    title     = "Live Microphone",
+                    icon      = Icons.Default.Mic,
+                    enabled   = uiState.micEnabled,
+                    available = dev.permissions.microphone,
+                    onToggle  = { viewModel.enableMic(!uiState.micEnabled) },
+                    onView    = { /* audio — no visual view */ },
+                    showView  = false
+                )
+                Spacer(Modifier.height(10.dp))
 
-                // Screen share
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape    = RoundedCornerShape(16.dp),
-                    colors   = CardDefaults.cardColors(
-                        containerColor = if (uiState.screenShareEnabled) ParentSuccess.copy(0.13f) else ParentCard
-                    ),
-                    border = if (uiState.screenShareEnabled) BorderStroke(1.dp, ParentSuccess) else null
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable(enabled = dev.permissions.screenShare) {
-                                viewModel.enableScreenShare(!uiState.screenShareEnabled)
-                            }.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.ScreenShare, null,
-                            tint = if (dev.permissions.screenShare) ParentSuccess else ParentOnSurface,
-                            modifier = Modifier.size(26.dp))
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("Screen Share", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
-                            Text(
-                                when {
-                                    !dev.permissions.screenShare -> "Permission not granted on child"
-                                    uiState.screenShareEnabled   -> "Live — tap to stop"
-                                    else                         -> "Available — tap to start"
-                                },
-                                fontSize = 12.sp, color = ParentOnSurface
-                            )
-                        }
-                        Switch(
-                            checked         = uiState.screenShareEnabled,
-                            onCheckedChange = { viewModel.enableScreenShare(it) },
-                            enabled         = dev.permissions.screenShare,
-                            colors          = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = ParentSuccess
-                            )
-                        )
-                    }
-                }
+                // Screen share row
+                LiveControlRow(
+                    title     = "Screen Share",
+                    icon      = Icons.Default.ScreenShare,
+                    enabled   = uiState.screenShareEnabled,
+                    available = dev.permissions.screenShare,
+                    onToggle  = { viewModel.enableScreenShare(!uiState.screenShareEnabled) },
+                    onView    = { showScreenView = true },
+                    showView  = uiState.screenShareEnabled
+                )
 
                 Spacer(Modifier.height(20.dp))
 
-                // Data Access section
+                // ── Data Access ──────────────────────────────────────
                 SectionLabel("Data Access")
                 Spacer(Modifier.height(10.dp))
-
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     DataAccessCard(
                         modifier  = Modifier.weight(1f),
@@ -312,10 +329,9 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // App Controls
+                // ── App Controls ─────────────────────────────────────
                 SectionLabel("App Controls")
                 Spacer(Modifier.height(10.dp))
-
                 Button(
                     onClick  = { showAppControlDialog = true },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -330,7 +346,7 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // Disconnect
+                // ── Disconnect ───────────────────────────────────────
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape    = RoundedCornerShape(16.dp),
@@ -340,8 +356,7 @@ fun DashboardScreen(
                     Column(Modifier.padding(16.dp)) {
                         Text("Disconnect Device", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ParentError)
                         Spacer(Modifier.height(4.dp))
-                        Text("Immediately removes the child device. Child will need to re-pair.",
-                            fontSize = 12.sp, color = ParentOnSurface)
+                        Text("Immediately removes the child device.", fontSize = 12.sp, color = ParentOnSurface)
                         Spacer(Modifier.height(12.dp))
                         OutlinedButton(
                             onClick  = { showForceDisconnectDialog = true },
@@ -360,7 +375,7 @@ fun DashboardScreen(
             Spacer(Modifier.height(32.dp))
         }
 
-        // Force disconnect dialog
+        // ── Force disconnect confirm ──────────────────────────────────
         if (showForceDisconnectDialog) {
             AlertDialog(
                 onDismissRequest = { showForceDisconnectDialog = false },
@@ -382,7 +397,7 @@ fun DashboardScreen(
             )
         }
 
-        // App control dialog
+        // ── App control dialog ────────────────────────────────────────
         if (showAppControlDialog) {
             AppControlDialog(
                 onDismiss  = { showAppControlDialog = false },
@@ -392,46 +407,42 @@ fun DashboardScreen(
             )
         }
 
-        // Notifications viewer dialog
+        // ── Notifications dialog ──────────────────────────────────────
         if (showNotificationsDialog) {
             Dialog(onDismissRequest = { showNotificationsDialog = false }) {
                 Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
                     Column(Modifier.padding(20.dp)) {
-                        Text("Recent Notifications", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Notifications, null, tint = ParentAccent, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Recent Notifications", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
+                        }
                         Spacer(Modifier.height(12.dp))
                         if (notifications.isEmpty()) {
-                            Text("No notifications captured yet.", color = ParentOnSurface, fontSize = 13.sp)
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text("No notifications captured yet.", color = ParentOnSurface, fontSize = 13.sp)
+                            }
                         } else {
-                            Column(
-                                modifier = Modifier
-                                    .heightIn(max = 400.dp)
-                                    .verticalScroll(rememberScrollState())
-                            ) {
+                            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
                                 notifications.forEach { notif ->
                                     Card(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                                         shape    = RoundedCornerShape(10.dp),
                                         colors   = CardDefaults.cardColors(containerColor = ParentSurface)
                                     ) {
                                         Column(Modifier.padding(10.dp)) {
-                                            Text(
-                                                notif["packageName"]?.toString() ?: "",
-                                                fontSize = 11.sp, color = ParentAccent, fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                notif["title"]?.toString() ?: "",
-                                                fontSize = 13.sp, color = ParentOnBackground
-                                            )
-                                            Text(
-                                                formatDate((notif["timestamp"] as? Long) ?: 0L),
-                                                fontSize = 10.sp, color = ParentOnSurface
-                                            )
+                                            Text(notif["packageName"]?.toString() ?: "",
+                                                fontSize = 10.sp, color = ParentAccent, fontWeight = FontWeight.Bold)
+                                            Text(notif["title"]?.toString() ?: "",
+                                                fontSize = 13.sp, color = ParentOnBackground)
+                                            Text(formatDate((notif["timestamp"] as? Long) ?: 0L),
+                                                fontSize = 10.sp, color = ParentOnSurface)
                                         }
                                     }
                                 }
                             }
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(10.dp))
                         TextButton(onClick = { showNotificationsDialog = false }, modifier = Modifier.fillMaxWidth()) {
                             Text("Close", color = ParentOnSurface)
                         }
@@ -440,44 +451,38 @@ fun DashboardScreen(
             }
         }
 
-        // Contacts viewer dialog
+        // ── Contacts dialog ───────────────────────────────────────────
         if (showContactsDialog) {
-            val deviceId = uiState.connectedDevice?.deviceId
-            LaunchedEffect(showContactsDialog) {
-                if (showContactsDialog && deviceId != null) {
-                    FirebaseDatabase.getInstance().getReference("contacts").child(deviceId)
-                        .get().addOnSuccessListener { snap ->
-                            val list = mutableListOf<String>()
-                            snap.children.forEach { child ->
-                                val name   = child.child("name").getValue(String::class.java) ?: ""
-                                val number = child.child("number").getValue(String::class.java) ?: ""
-                                if (name.isNotEmpty()) list.add("$name — $number")
-                            }
-                            contacts = list
-                        }
-                }
-            }
             Dialog(onDismissRequest = { showContactsDialog = false }) {
                 Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
                     Column(Modifier.padding(20.dp)) {
-                        Text("Contacts", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Contacts, null, tint = ParentAccent, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Contacts (${contacts.size})", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
+                        }
                         Spacer(Modifier.height(12.dp))
                         if (contacts.isEmpty()) {
-                            Text("No contacts synced yet.", color = ParentOnSurface, fontSize = 13.sp)
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text("No contacts synced yet.\nEnsure Contact Access is granted on child device.",
+                                    color = ParentOnSurface, fontSize = 13.sp, textAlign = TextAlign.Center)
+                            }
                         } else {
-                            Column(
-                                modifier = Modifier
-                                    .heightIn(max = 400.dp)
-                                    .verticalScroll(rememberScrollState())
-                            ) {
+                            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
                                 contacts.forEach { contact ->
-                                    Text(contact, fontSize = 13.sp, color = ParentOnBackground,
-                                        modifier = Modifier.padding(vertical = 4.dp))
-                                    Divider(color = ParentSurface)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Person, null, tint = ParentOnSurface, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(contact, fontSize = 13.sp, color = ParentOnBackground, modifier = Modifier.weight(1f))
+                                    }
+                                    Divider(color = ParentSurface, thickness = 0.5.dp)
                                 }
                             }
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(10.dp))
                         TextButton(onClick = { showContactsDialog = false }, modifier = Modifier.fillMaxWidth()) {
                             Text("Close", color = ParentOnSurface)
                         }
@@ -486,7 +491,7 @@ fun DashboardScreen(
             }
         }
 
-        // Success toast
+        // ── Success toast ─────────────────────────────────────────────
         AnimatedVisibility(
             visible  = uiState.successMessage != null,
             enter    = slideInVertically { it } + fadeIn(),
@@ -517,9 +522,7 @@ private fun SectionLabel(text: String) {
 @Composable
 private fun PermRow(label: String, icon: ImageVector, granted: Boolean, isLast: Boolean = false) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null,
-            tint = if (granted) ParentSuccess else ParentOnSurface,
-            modifier = Modifier.size(20.dp))
+        Icon(icon, null, tint = if (granted) ParentSuccess else ParentOnSurface, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(12.dp))
         Text(label, fontSize = 13.sp, color = ParentOnBackground, modifier = Modifier.weight(1f))
         Box(
@@ -537,32 +540,56 @@ private fun PermRow(label: String, icon: ImageVector, granted: Boolean, isLast: 
 }
 
 @Composable
-private fun ControlToggleCard(
-    modifier: Modifier,
+private fun LiveControlRow(
     title: String,
     icon: ImageVector,
     enabled: Boolean,
     available: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
+    onView: () -> Unit,
+    showView: Boolean
 ) {
     Card(
-        modifier = modifier.clickable(enabled = available, onClick = onToggle),
+        modifier = Modifier.fillMaxWidth(),
         shape    = RoundedCornerShape(16.dp),
         colors   = CardDefaults.cardColors(
-            containerColor = if (enabled) ParentSuccess.copy(0.14f) else ParentCard
+            containerColor = if (enabled) ParentSuccess.copy(0.13f) else ParentCard
         ),
         border = if (enabled) BorderStroke(1.dp, ParentSuccess) else null
     ) {
-        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Icon(icon, null,
                 tint = if (!available) ParentOnSurface else if (enabled) ParentSuccess else ParentAccent,
-                modifier = Modifier.size(34.dp))
-            Spacer(Modifier.height(8.dp))
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
-            Text(
-                if (!available) "Unavailable" else if (enabled) "Active" else "Off",
-                fontSize = 11.sp,
-                color = if (!available) ParentError else if (enabled) ParentSuccess else ParentOnSurface
+                modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
+                Text(
+                    if (!available) "Permission not granted"
+                    else if (enabled) "Active — streaming" else "Off",
+                    fontSize = 11.sp,
+                    color = if (!available) ParentError else if (enabled) ParentSuccess else ParentOnSurface
+                )
+            }
+            // View live button (only when active and has visual)
+            if (showView) {
+                TextButton(onClick = onView) {
+                    Icon(Icons.Default.Visibility, null, tint = ParentAccent, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("View", color = ParentAccent, fontSize = 12.sp)
+                }
+            }
+            Switch(
+                checked         = enabled,
+                onCheckedChange = { onToggle() },
+                enabled         = available,
+                colors          = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = ParentSuccess
+                )
             )
         }
     }
@@ -591,21 +618,19 @@ private fun DataAccessCard(
                 modifier = Modifier.size(30.dp))
             Spacer(Modifier.height(8.dp))
             Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
-            Text(
-                if (available) "Tap to view" else "Unavailable",
+            Text(if (available) "Tap to view" else "Unavailable",
                 fontSize = 11.sp,
-                color = if (available) ParentAccent else ParentOnSurface
-            )
+                color = if (available) ParentAccent else ParentOnSurface)
         }
     }
 }
 
 @Composable
 private fun AppControlDialog(
-    onDismiss:  () -> Unit,
+    onDismiss: () -> Unit,
     onSetLimit: (String, Int) -> Unit,
-    onBlock:    (String) -> Unit,
-    onUnblock:  (String) -> Unit
+    onBlock: (String) -> Unit,
+    onUnblock: (String) -> Unit
 ) {
     var pkg       by remember { mutableStateOf("") }
     var limitMins by remember { mutableStateOf("60") }
@@ -614,7 +639,7 @@ private fun AppControlDialog(
         Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
             Column(Modifier.padding(24.dp)) {
                 Text("App Controls", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
-                Text("Enter the app's package name (e.g. com.whatsapp)",
+                Text("Enter the exact package name (e.g. com.whatsapp)",
                     fontSize = 12.sp, color = ParentOnSurface, modifier = Modifier.padding(top = 4.dp))
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
@@ -659,11 +684,8 @@ private fun AppControlDialog(
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
-                    onClick  = {
-                        if (pkg.isNotEmpty()) {
-                            onSetLimit(pkg, limitMins.toIntOrNull() ?: 60)
-                            onDismiss()
-                        }
+                    onClick = {
+                        if (pkg.isNotEmpty()) { onSetLimit(pkg, limitMins.toIntOrNull() ?: 60); onDismiss() }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape    = RoundedCornerShape(10.dp),
