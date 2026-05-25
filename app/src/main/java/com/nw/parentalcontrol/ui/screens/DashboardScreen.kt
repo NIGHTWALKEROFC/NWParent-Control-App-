@@ -36,11 +36,12 @@ fun DashboardScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     var showForceDisconnectDialog by remember { mutableStateOf(false) }
-    var showAppControlDialog      by remember { mutableStateOf(false) }
     var showNotificationsDialog   by remember { mutableStateOf(false) }
     var showContactsDialog        by remember { mutableStateOf(false) }
     var showCameraView            by remember { mutableStateOf(false) }
     var showScreenView            by remember { mutableStateOf(false) }
+    var showMicListen             by remember { mutableStateOf(false) }
+    var showAppListDialog         by remember { mutableStateOf(false) }
 
     var notifications by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var contacts      by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -86,7 +87,8 @@ fun DashboardScreen(
         }
     }
 
-    // ── Update dialog ────────────────────────────────────────────────
+    // ── Alert dialogs ────────────────────────────────────────────────
+
     uiState.updateInfo?.let { upd ->
         AlertDialog(
             onDismissRequest = { if (!upd.mandatory) viewModel.dismissUpdate() },
@@ -110,7 +112,6 @@ fun DashboardScreen(
         )
     }
 
-    // ── Disconnect request ───────────────────────────────────────────
     if (uiState.pendingDisconnectRequest) {
         AlertDialog(
             onDismissRequest = {},
@@ -131,7 +132,6 @@ fun DashboardScreen(
         )
     }
 
-    // ── Delete request ───────────────────────────────────────────────
     if (uiState.pendingDeleteRequest) {
         AlertDialog(
             onDismissRequest = {},
@@ -155,19 +155,29 @@ fun DashboardScreen(
     // ── Live view dialogs ────────────────────────────────────────────
     if (showCameraView) {
         uiState.connectedDevice?.let { dev ->
-            LiveViewDialog(
-                deviceId  = dev.deviceId,
-                type      = LiveViewType.CAMERA,
-                onDismiss = { showCameraView = false }
-            )
+            LiveViewDialog(deviceId = dev.deviceId, type = LiveViewType.CAMERA,
+                onDismiss = { showCameraView = false })
         }
     }
     if (showScreenView) {
         uiState.connectedDevice?.let { dev ->
-            LiveViewDialog(
+            LiveViewDialog(deviceId = dev.deviceId, type = LiveViewType.SCREEN,
+                onDismiss = { showScreenView = false })
+        }
+    }
+    if (showMicListen) {
+        uiState.connectedDevice?.let { dev ->
+            MicListenDialog(deviceId = dev.deviceId, onDismiss = { showMicListen = false })
+        }
+    }
+
+    // App list dialog
+    if (showAppListDialog) {
+        uiState.connectedDevice?.let { dev ->
+            AppListDialog(
                 deviceId  = dev.deviceId,
-                type      = LiveViewType.SCREEN,
-                onDismiss = { showScreenView = false }
+                viewModel = viewModel,
+                onDismiss = { showAppListDialog = false }
             )
         }
     }
@@ -204,7 +214,7 @@ fun DashboardScreen(
 
             uiState.connectedDevice?.let { dev ->
 
-                // ── Device Card ──────────────────────────────────────
+                // Device card
                 Card(
                     modifier  = Modifier.fillMaxWidth(),
                     shape     = RoundedCornerShape(20.dp),
@@ -228,11 +238,9 @@ fun DashboardScreen(
                                 Box(Modifier.size(8.dp).clip(CircleShape)
                                     .background(if (dev.isOnline) ParentSuccess else ParentError))
                                 Spacer(Modifier.width(5.dp))
-                                Text(
-                                    if (dev.isOnline) "Online" else "Offline",
+                                Text(if (dev.isOnline) "Online" else "Offline",
                                     fontSize = 12.sp,
-                                    color = if (dev.isOnline) ParentSuccess else ParentError
-                                )
+                                    color = if (dev.isOnline) ParentSuccess else ParentError)
                             }
                         }
                         IconButton(onClick = { showForceDisconnectDialog = true }) {
@@ -243,7 +251,7 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Permissions ──────────────────────────────────────
+                // Permissions
                 SectionLabel("Device Permissions")
                 Spacer(Modifier.height(10.dp))
                 Card(
@@ -266,11 +274,10 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Live Controls ────────────────────────────────────
+                // Live Controls
                 SectionLabel("Live Controls")
                 Spacer(Modifier.height(10.dp))
 
-                // Camera row
                 LiveControlRow(
                     title     = "Live Camera",
                     icon      = Icons.Default.Videocam,
@@ -281,20 +288,17 @@ fun DashboardScreen(
                     showView  = uiState.cameraEnabled
                 )
                 Spacer(Modifier.height(10.dp))
-
-                // Mic row
                 LiveControlRow(
                     title     = "Live Microphone",
                     icon      = Icons.Default.Mic,
                     enabled   = uiState.micEnabled,
                     available = dev.permissions.microphone,
                     onToggle  = { viewModel.enableMic(!uiState.micEnabled) },
-                    onView    = { /* audio — no visual view */ },
-                    showView  = false
+                    onView    = { showMicListen = true },
+                    showView  = uiState.micEnabled,
+                    viewLabel = "Listen"
                 )
                 Spacer(Modifier.height(10.dp))
-
-                // Screen share row
                 LiveControlRow(
                     title     = "Screen Share",
                     icon      = Icons.Default.ScreenShare,
@@ -307,7 +311,7 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Data Access ──────────────────────────────────────
+                // Data Access
                 SectionLabel("Data Access")
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -329,24 +333,24 @@ fun DashboardScreen(
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── App Controls ─────────────────────────────────────
+                // App Controls — now shows app list
                 SectionLabel("App Controls")
                 Spacer(Modifier.height(10.dp))
                 Button(
-                    onClick  = { showAppControlDialog = true },
+                    onClick  = { showAppListDialog = true },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape    = RoundedCornerShape(14.dp),
                     colors   = ButtonDefaults.buttonColors(containerColor = ParentSurface),
                     border   = BorderStroke(1.dp, ParentAccent.copy(0.35f))
                 ) {
-                    Icon(Icons.Default.AppBlocking, null, tint = ParentAccent, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Apps, null, tint = ParentAccent, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("Set App Limits / Block Apps", color = ParentOnBackground, fontWeight = FontWeight.SemiBold)
+                    Text("View & Block Apps", color = ParentOnBackground, fontWeight = FontWeight.SemiBold)
                 }
 
                 Spacer(Modifier.height(20.dp))
 
-                // ── Disconnect ───────────────────────────────────────
+                // Disconnect
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape    = RoundedCornerShape(16.dp),
@@ -375,7 +379,7 @@ fun DashboardScreen(
             Spacer(Modifier.height(32.dp))
         }
 
-        // ── Force disconnect confirm ──────────────────────────────────
+        // Force disconnect
         if (showForceDisconnectDialog) {
             AlertDialog(
                 onDismissRequest = { showForceDisconnectDialog = false },
@@ -397,17 +401,7 @@ fun DashboardScreen(
             )
         }
 
-        // ── App control dialog ────────────────────────────────────────
-        if (showAppControlDialog) {
-            AppControlDialog(
-                onDismiss  = { showAppControlDialog = false },
-                onSetLimit = { pkg, mins -> viewModel.setAppLimit(pkg, mins) },
-                onBlock    = { pkg -> viewModel.blockApp(pkg) },
-                onUnblock  = { pkg -> viewModel.unblockApp(pkg) }
-            )
-        }
-
-        // ── Notifications dialog ──────────────────────────────────────
+        // Notifications dialog
         if (showNotificationsDialog) {
             Dialog(onDismissRequest = { showNotificationsDialog = false }) {
                 Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
@@ -451,7 +445,7 @@ fun DashboardScreen(
             }
         }
 
-        // ── Contacts dialog ───────────────────────────────────────────
+        // Contacts dialog
         if (showContactsDialog) {
             Dialog(onDismissRequest = { showContactsDialog = false }) {
                 Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
@@ -491,7 +485,7 @@ fun DashboardScreen(
             }
         }
 
-        // ── Success toast ─────────────────────────────────────────────
+        // Success toast
         AnimatedVisibility(
             visible  = uiState.successMessage != null,
             enter    = slideInVertically { it } + fadeIn(),
@@ -547,7 +541,8 @@ private fun LiveControlRow(
     available: Boolean,
     onToggle: () -> Unit,
     onView: () -> Unit,
-    showView: Boolean
+    showView: Boolean,
+    viewLabel: String = "View"
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -557,10 +552,7 @@ private fun LiveControlRow(
         ),
         border = if (enabled) BorderStroke(1.dp, ParentSuccess) else null
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null,
                 tint = if (!available) ParentOnSurface else if (enabled) ParentSuccess else ParentAccent,
                 modifier = Modifier.size(24.dp))
@@ -574,12 +566,14 @@ private fun LiveControlRow(
                     color = if (!available) ParentError else if (enabled) ParentSuccess else ParentOnSurface
                 )
             }
-            // View live button (only when active and has visual)
             if (showView) {
                 TextButton(onClick = onView) {
-                    Icon(Icons.Default.Visibility, null, tint = ParentAccent, modifier = Modifier.size(16.dp))
+                    Icon(
+                        if (viewLabel == "Listen") Icons.Default.Hearing else Icons.Default.Visibility,
+                        null, tint = ParentAccent, modifier = Modifier.size(16.dp)
+                    )
                     Spacer(Modifier.width(4.dp))
-                    Text("View", color = ParentAccent, fontSize = 12.sp)
+                    Text(viewLabel, color = ParentAccent, fontSize = 12.sp)
                 }
             }
             Switch(
@@ -609,93 +603,12 @@ private fun DataAccessCard(
         colors   = CardDefaults.cardColors(containerColor = ParentCard),
         border   = BorderStroke(1.dp, if (available) ParentAccent.copy(0.4f) else ParentOnSurface.copy(0.2f))
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(icon, null,
-                tint = if (available) ParentAccent else ParentOnSurface,
-                modifier = Modifier.size(30.dp))
+        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, null, tint = if (available) ParentAccent else ParentOnSurface, modifier = Modifier.size(30.dp))
             Spacer(Modifier.height(8.dp))
             Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
             Text(if (available) "Tap to view" else "Unavailable",
-                fontSize = 11.sp,
-                color = if (available) ParentAccent else ParentOnSurface)
-        }
-    }
-}
-
-@Composable
-private fun AppControlDialog(
-    onDismiss: () -> Unit,
-    onSetLimit: (String, Int) -> Unit,
-    onBlock: (String) -> Unit,
-    onUnblock: (String) -> Unit
-) {
-    var pkg       by remember { mutableStateOf("") }
-    var limitMins by remember { mutableStateOf("60") }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = ParentCard)) {
-            Column(Modifier.padding(24.dp)) {
-                Text("App Controls", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ParentOnBackground)
-                Text("Enter the exact package name (e.g. com.whatsapp)",
-                    fontSize = 12.sp, color = ParentOnSurface, modifier = Modifier.padding(top = 4.dp))
-                Spacer(Modifier.height(16.dp))
-                OutlinedTextField(
-                    value         = pkg,
-                    onValueChange = { pkg = it },
-                    label         = { Text("Package name", color = ParentOnSurface) },
-                    modifier      = Modifier.fillMaxWidth(),
-                    singleLine    = true,
-                    colors        = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor     = ParentOnBackground,
-                        unfocusedTextColor   = ParentOnBackground,
-                        focusedBorderColor   = ParentAccent,
-                        unfocusedBorderColor = ParentOnSurface
-                    )
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value         = limitMins,
-                    onValueChange = { limitMins = it },
-                    label         = { Text("Daily limit (minutes)", color = ParentOnSurface) },
-                    modifier      = Modifier.fillMaxWidth(),
-                    singleLine    = true,
-                    colors        = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor     = ParentOnBackground,
-                        unfocusedTextColor   = ParentOnBackground,
-                        focusedBorderColor   = ParentAccent,
-                        unfocusedBorderColor = ParentOnSurface
-                    )
-                )
-                Spacer(Modifier.height(20.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick  = { if (pkg.isNotEmpty()) { onUnblock(pkg); onDismiss() } },
-                        modifier = Modifier.weight(1f),
-                        border   = BorderStroke(1.dp, ParentSuccess)
-                    ) { Text("Unblock", color = ParentSuccess, fontSize = 12.sp) }
-                    OutlinedButton(
-                        onClick  = { if (pkg.isNotEmpty()) { onBlock(pkg); onDismiss() } },
-                        modifier = Modifier.weight(1f),
-                        border   = BorderStroke(1.dp, ParentError)
-                    ) { Text("Block App", color = ParentError, fontSize = 12.sp) }
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        if (pkg.isNotEmpty()) { onSetLimit(pkg, limitMins.toIntOrNull() ?: 60); onDismiss() }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape    = RoundedCornerShape(10.dp),
-                    colors   = ButtonDefaults.buttonColors(containerColor = ParentAccent)
-                ) { Text("Set Daily Limit", fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.height(6.dp))
-                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                    Text("Cancel", color = ParentOnSurface)
-                }
-            }
+                fontSize = 11.sp, color = if (available) ParentAccent else ParentOnSurface)
         }
     }
 }
