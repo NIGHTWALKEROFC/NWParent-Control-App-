@@ -1,4 +1,4 @@
-// PATH: nw-parent-app/app/src/main/java/com/nw/parentalcontrol/viewmodel/ParentViewModel.kt
+// PATH: app/src/main/java/com/nw/parentalcontrol/viewmodel/ParentViewModel.kt
 package com.nw.parentalcontrol.viewmodel
 
 import android.app.Application
@@ -16,19 +16,19 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 data class ParentUiState(
-    val pairingCode: String        = "",
-    val pairingCodeExpiry: Long    = 0L,
+    val pairingCode: String           = "",
+    val pairingCodeExpiry: Long       = 0L,
     val connectedDevice: ChildDevice? = null,
-    val isConnected: Boolean       = false,
-    val isLoading: Boolean         = false,
-    val errorMessage: String?      = null,
-    val successMessage: String?    = null,
-    val updateInfo: UpdateInfo?    = null,
+    val isConnected: Boolean          = false,
+    val isLoading: Boolean            = false,
+    val errorMessage: String?         = null,
+    val successMessage: String?       = null,
+    val updateInfo: UpdateInfo?       = null,
     val pendingDisconnectRequest: Boolean = false,
     val pendingDeleteRequest: Boolean     = false,
-    val cameraEnabled: Boolean     = false,
-    val micEnabled: Boolean        = false,
-    val screenShareEnabled: Boolean = false
+    val cameraEnabled: Boolean        = false,
+    val micEnabled: Boolean           = false,
+    val screenShareEnabled: Boolean   = false
 )
 
 class ParentViewModel(application: Application) : AndroidViewModel(application) {
@@ -56,10 +56,7 @@ class ParentViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     init {
-        // Sign in anonymously so Firebase rules allow read/write
         FirebaseAuth.getInstance().signInAnonymously()
-
-        // Restore previously connected device
         val savedId = prefs.getString("connected_child_device_id", null)
         if (savedId != null) {
             listenToChildDevice(savedId)
@@ -68,7 +65,7 @@ class ParentViewModel(application: Application) : AndroidViewModel(application) 
         checkForUpdates()
     }
 
-    // ── Pairing ──────────────────────────────────────────────────────
+    // ── Pairing ───────────────────────────────────────────────────────
 
     fun generatePairingCode() {
         codeRefreshJob?.cancel()
@@ -94,11 +91,9 @@ class ParentViewModel(application: Application) : AndroidViewModel(application) 
                     prefs.edit().putString("connected_child_device_id", device.deviceId).apply()
                     _uiState.update {
                         it.copy(
-                            connectedDevice  = device,
-                            isConnected      = true,
-                            pairingCode      = "",
-                            pairingCodeExpiry = 0L,
-                            successMessage   = "Connected: ${device.deviceName}"
+                            connectedDevice = device, isConnected = true,
+                            pairingCode = "", pairingCodeExpiry = 0L,
+                            successMessage = "Connected: ${device.deviceName}"
                         )
                     }
                     repo.invalidatePairingCode(code)
@@ -115,15 +110,12 @@ class ParentViewModel(application: Application) : AndroidViewModel(application) 
             val remaining = expiry - System.currentTimeMillis()
             if (remaining > 0) {
                 delay(remaining)
-                // Auto-regenerate if still waiting
                 if (_uiState.value.pairingCode.isNotEmpty() && _uiState.value.connectedDevice == null) {
                     generatePairingCode()
                 }
             }
         }
     }
-
-    // ── Device & Request Listening ───────────────────────────────────
 
     fun listenToChildDevice(deviceId: String) {
         deviceListenerJob?.cancel()
@@ -152,7 +144,7 @@ class ParentViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // ── Live Controls ────────────────────────────────────────────────
+    // ── Live Controls ─────────────────────────────────────────────────
 
     fun enableCamera(enable: Boolean) {
         val device = _uiState.value.connectedDevice ?: return
@@ -181,7 +173,43 @@ class ParentViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // ── App Controls ─────────────────────────────────────────────────
+    // ── New Features ──────────────────────────────────────────────────
+
+    fun lockDevice() {
+        val device = _uiState.value.connectedDevice ?: return
+        viewModelScope.launch {
+            repo.lockDevice(device.deviceId)
+            _uiState.update { it.copy(successMessage = "Device locked") }
+        }
+    }
+
+    fun setPin(pin: String) {
+        val device = _uiState.value.connectedDevice ?: return
+        viewModelScope.launch {
+            repo.setPin(device.deviceId, pin)
+            _uiState.update { it.copy(successMessage = "PIN set on child device") }
+        }
+    }
+
+    fun takeScreenshot() {
+        val device = _uiState.value.connectedDevice ?: return
+        viewModelScope.launch {
+            repo.takeScreenshot(device.deviceId)
+            _uiState.update { it.copy(successMessage = "Screenshot requested") }
+        }
+    }
+
+    fun refreshCallLog() {
+        val device = _uiState.value.connectedDevice ?: return
+        viewModelScope.launch { repo.syncCallLog(device.deviceId) }
+    }
+
+    fun refreshSms() {
+        val device = _uiState.value.connectedDevice ?: return
+        viewModelScope.launch { repo.syncSms(device.deviceId) }
+    }
+
+    // ── App Controls ──────────────────────────────────────────────────
 
     fun setAppLimit(packageName: String, limitMinutes: Int) {
         val device = _uiState.value.connectedDevice ?: return
@@ -198,7 +226,7 @@ class ParentViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { repo.unblockApp(device.deviceId, packageName) }
     }
 
-    // ── Disconnect / Delete ──────────────────────────────────────────
+    // ── Disconnect / Delete ───────────────────────────────────────────
 
     fun approveDisconnect() {
         val device = _uiState.value.connectedDevice ?: return
@@ -249,29 +277,21 @@ class ParentViewModel(application: Application) : AndroidViewModel(application) 
         requestListenerJob?.cancel()
         _uiState.update {
             it.copy(
-                connectedDevice          = null,
-                isConnected              = false,
-                pendingDisconnectRequest = false,
-                pendingDeleteRequest     = false,
-                cameraEnabled            = false,
-                micEnabled               = false,
-                screenShareEnabled       = false
+                connectedDevice = null, isConnected = false,
+                pendingDisconnectRequest = false, pendingDeleteRequest = false,
+                cameraEnabled = false, micEnabled = false, screenShareEnabled = false
             )
         }
     }
 
-    // ── Updates ──────────────────────────────────────────────────────
-
     private fun checkForUpdates() {
         viewModelScope.launch {
-            val update = updateRepo.checkForUpdates(currentVersionCode = 1)
+            val update = updateRepo.checkForUpdates(1)
             if (update != null) _uiState.update { it.copy(updateInfo = update) }
         }
     }
 
-    // ── UI helpers ───────────────────────────────────────────────────
-
-    fun clearError()   = _uiState.update { it.copy(errorMessage = null) }
-    fun clearSuccess() = _uiState.update { it.copy(successMessage = null) }
+    fun clearError()    = _uiState.update { it.copy(errorMessage = null) }
+    fun clearSuccess()  = _uiState.update { it.copy(successMessage = null) }
     fun dismissUpdate() = _uiState.update { it.copy(updateInfo = null) }
 }
