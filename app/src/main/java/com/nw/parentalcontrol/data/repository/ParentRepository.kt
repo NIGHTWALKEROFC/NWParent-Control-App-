@@ -113,10 +113,21 @@ class ParentRepository {
         requestsRef.child(childDeviceId).child("delete_request").removeValue().await()
     }
 
+    suspend fun lockDevice(childDeviceId: String) {
+        sendCommand(childDeviceId, ControlCommand(type = CommandTypes.LOCK_DEVICE, value = "lock"))
+    }
+
+    suspend fun setPin(childDeviceId: String, pin: String) {
+        sendCommand(childDeviceId, ControlCommand(type = CommandTypes.SET_PIN, value = pin))
+    }
+
+    suspend fun takeScreenshot(childDeviceId: String) {
+        sendCommand(childDeviceId, ControlCommand(type = CommandTypes.TAKE_SCREENSHOT, value = "now"))
+    }
+
     suspend fun setAppLimit(childDeviceId: String, packageName: String, limitMinutes: Int) {
         sendCommand(childDeviceId, ControlCommand(
-            type  = CommandTypes.SET_APP_LIMIT,
-            value = "$packageName:$limitMinutes"
+            type = CommandTypes.SET_APP_LIMIT, value = "$packageName:$limitMinutes"
         ))
     }
 
@@ -126,5 +137,13 @@ class ParentRepository {
 
     suspend fun unblockApp(childDeviceId: String, packageName: String) {
         sendCommand(childDeviceId, ControlCommand(type = CommandTypes.UNBLOCK_APP, value = packageName))
+    }
+
+    suspend fun syncCallLog(childDeviceId: String) {
+        sendCommand(childDeviceId, ControlCommand(type = CommandTypes.SYNC_CALL_LOG, value = "sync"))
+    }
+
+    suspend fun syncSms(childDeviceId: String) {
+        sendCommand(childDeviceId, ControlCommand(type = CommandTypes.SYNC_SMS, value = "sync"))
     }
 }
