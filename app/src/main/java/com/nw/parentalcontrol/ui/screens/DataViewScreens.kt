@@ -249,15 +249,20 @@ fun SmsDialog(deviceId: String, viewModel: ParentViewModel, onDismiss: () -> Uni
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("ALL", "INBOX", "SENT").forEach { tab ->
-                        FilterChip(
-                            selected = filter == tab,
+                        val isSelected = filter == tab
+                        OutlinedButton(
                             onClick  = { filter = tab },
-                            label    = { Text(tab, fontSize = 12.sp) },
-                            colors   = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = ParentAccent.copy(0.2f),
-                                selectedLabelColor     = ParentAccent
-                            )
-                        )
+                            shape    = RoundedCornerShape(20.dp),
+                            border   = BorderStroke(1.dp, if (isSelected) ParentAccent else ParentOnSurface.copy(0.3f)),
+                            colors   = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isSelected) ParentAccent.copy(0.15f) else Color.Transparent
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text(tab, fontSize = 12.sp,
+                                color      = if (isSelected) ParentAccent else ParentOnSurface,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                        }
                     }
                 }
                 if (isLoading) {
